@@ -3,8 +3,10 @@ import torch.distributed as dist
 import numpy as np
 
 logger_initialized = {}
+
+
 ############Define logger function ################
-def get_root_logger(log_file=None, log_level=logging.INFO, name='main'):
+def get_root_logger(log_file=None, log_level=logging.INFO, name="main"):
     logger = get_logger(name=name, log_file=log_file, log_level=log_level)
     # add a logging filter
     logging_filter = logging.Filter(name)
@@ -13,7 +15,7 @@ def get_root_logger(log_file=None, log_level=logging.INFO, name='main'):
     return logger
 
 
-def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
+def get_logger(name, log_file=None, log_level=logging.INFO, file_mode="w"):
     logger = logging.getLogger(name)
     if name in logger_initialized:
         return logger
@@ -37,7 +39,8 @@ def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
         handlers.append(file_handler)
 
     formatter = logging.Formatter(
-        '%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+        "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    )
     for handler in handlers:
         handler.setFormatter(formatter)
         handler.setLevel(log_level)
@@ -50,7 +53,6 @@ def get_logger(name, log_file=None, log_level=logging.INFO, file_mode='w'):
 
     logger_initialized[name] = True
 
-
     return logger
 
 
@@ -59,12 +61,13 @@ def print_log(msg, logger=None, level=logging.INFO):
         print(msg)
     elif isinstance(logger, logging.Logger):
         logger.log(level, msg)
-    elif logger == 'silent':
+    elif logger == "silent":
         pass
     elif isinstance(logger, str):
         _logger = get_logger(logger)
         _logger.log(level, msg)
     else:
         raise TypeError(
-            'logger should be either a logging.Logger object, str, '
-            f'"silent" or None, but got {type(logger)}')
+            "logger should be either a logging.Logger object, str, "
+            f'"silent" or None, but got {type(logger)}'
+        )
