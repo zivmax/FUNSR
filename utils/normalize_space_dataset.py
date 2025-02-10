@@ -55,11 +55,11 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.process_data(self.data_dir, dataname)
             prep_data = self._load_processed_data(data_path)
 
-        self.point = prep_data["sample_near"]  # Points near the surface
-        self.sample = prep_data["query_points"]  # Sampled query points
-        self.point_gt = prep_data["pointcloud"]  # Original point cloud
+        self.points = prep_data["sample_near"]  # Points near the surface
+        self.samples = prep_data["query_points"]  # Sampled query points
+        self.points_gt = prep_data["pointcloud"]  # Original point cloud
 
-        self.sample_points_num = self.sample.shape[0] - 1
+        self.sample_points_num = self.samples.shape[0] - 1
         self._compute_bounding_box()
         print("NP Load data: End")
 
@@ -69,19 +69,19 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
 
     def _compute_bounding_box(self):
         """Computes and stores the bounding box of the downsampled point cloud."""
-        self.object_bbox_min, _ = torch.min(self.point, dim=0)
+        self.object_bbox_min, _ = torch.min(self.points, dim=0)
         self.object_bbox_min = self.object_bbox_min - 0.05  # Add padding
-        self.object_bbox_max, _ = torch.max(self.point, dim=0)
+        self.object_bbox_max, _ = torch.max(self.points, dim=0)
         self.object_bbox_max = self.object_bbox_max + 0.05  # Add padding
         print("Data bounding box:", self.object_bbox_min, self.object_bbox_max)
 
     def __len__(self):
         """Returns the total number of query points."""
-        return self.sample.shape[0]
+        return self.samples.shape[0]
 
     def __getitem__(self, idx):
         """Returns a single data point (point, sample, point_gt)."""
-        return self.point[idx], self.sample[idx], self.point_gt
+        return self.points[idx], self.samples[idx], self.points_gt
 
     def np_train_data(self, batch_size):
         """
@@ -101,9 +101,9 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.sample_points_num // 10, batch_size, replace=False
         )  # Random indices from the rest
         index = index_fine * 10 + index_coarse  # Combine indices
-        points = self.point[index]
-        sample = self.sample[index]
-        return points, sample, self.point_gt
+        points = self.points[index]
+        sample = self.samples[index]
+        return points, sample, self.points_gt
 
     def process_data(self, data_dir, dataname):
         """Processes the raw point cloud data and saves it to a .pt file."""
