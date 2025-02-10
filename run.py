@@ -96,15 +96,6 @@ class Trainer:
         for g in self.sdf_optimizer.param_groups:
             g["lr"] = lr
 
-    def get_discriminator_loss_single(self, pred, label=True):
-        if label:
-            return torch.mean((pred - 1) ** 2)
-        else:
-            return torch.mean((pred) ** 2)
-
-    def get_funsr_loss(self, pred_fake):
-        return torch.mean((pred_fake - 1) ** 2)
-
     def train(self):
         total_loss = torch.tensor(0.0)
 
@@ -117,49 +108,45 @@ class Trainer:
                 leave=True,
                 dynamic_ncols=True,
             )
-            for points, samples, point_gt in progress_bar:
+            for points, sds_real, _ in progress_bar:
                 self.update_learning_rate(self.iter_step)
-                points, samples, point_gt = (
+                points, sds_real = (
                     points.to(self.device),
-                    samples.to(self.device),
-                    point_gt.to(self.device),
+                    sds_real.to(self.device),
                 )
 
                 # Train FUNSR Network
                 self.sdf_optimizer.zero_grad()
-                samples.requires_grad = True
-                gradients_sample = self.sdf_network.gradient(samples).squeeze()
-                sdf_sample = self.sdf_network.sdf(samples)
+                sds_real.requires_grad = True
+                gradients_sample = self.sdf_network.gradient(sds_real).squeeze()
+                sds_pred = self.sdf_network.sdf(sds_real)
                 grad_norm = F.normalize(gradients_sample, dim=1)
-                sample_moved = samples - grad_norm * sdf_sample
+                sds_pred_error = sds_real - grad_norm * sds_pred
 
                 loss_sdf = torch.linalg.norm(
-                    (points - sample_moved), ord=2, dim=-1
+                    (points - sds_pred_error), ord=2, dim=-1
                 ).mean()
-                SCC = F.normalize(sample_moved - points, dim=1)
+
+                SCC = F.normalize(sds_pred_error - points, dim=1)
                 loss_SCC = (1.0 - F.cosine_similarity(grad_norm, SCC, dim=1)).mean()
                 G_loss = loss_sdf + loss_SCC * self.labmda_scc
 
                 # Train Discriminator
                 self.dis_optimizer.zero_grad()
-                d_fake_output = self.discriminator.sdf(sdf_sample.detach())
-                d_fake_loss = self.get_discriminator_loss_single(
-                    d_fake_output, label=False
-                )
+                d_fake_output = self.discriminator.sdf(sds_pred.detach())
+                d_fake_loss = torch.mean((d_fake_output) ** 2)
 
-                real_sdf = torch.zeros(points.size(0), 1).to(self.device)
-                d_real_output = self.discriminator.sdf(real_sdf)
-                d_real_loss = self.get_discriminator_loss_single(
-                    d_real_output, label=True
-                )
+                real_sds = torch.zeros(points.size(0), 1).to(self.device)
+                d_real_output = self.discriminator.sdf(real_sds)
+                d_real_loss = torch.mean((d_real_output - 1) ** 2)
                 dis_loss = d_real_loss + d_fake_loss
                 dis_loss.backward()
                 self.dis_optimizer.step()
 
                 # Total Loss
-                d_fake_output = self.discriminator.sdf(sdf_sample)
-                gan_loss = self.get_funsr_loss(d_fake_output)
-                total_loss = gan_loss * self.labmda_adl + G_loss
+                d_fake_output = self.discriminator.sdf(sds_pred)
+                GAN_loss = torch.mean((d_fake_output - 1) ** 2)
+                total_loss = GAN_loss * self.labmda_adl + G_loss
                 total_loss.backward()
                 self.sdf_optimizer.step()
 
@@ -184,14 +171,13 @@ class Trainer:
                 self.validate_mesh(
                     resolution=256,
                     threshold=self.args.mcubes_threshold,
-                    point_gt=point_gt,
                     iter_step=self.iter_step,
                 )
 
             if epoch % self.save_freq == 0:
                 self.save_checkpoint()
 
-    def validate_mesh(self, resolution, threshold, point_gt, iter_step):
+    def validate_mesh(self, resolution, threshold, iter_step):
         output_dir = os.path.join(self.base_exp_dir, "outputs")
         os.makedirs(output_dir, exist_ok=True)
         mesh = self.extract_geometry(

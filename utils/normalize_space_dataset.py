@@ -7,35 +7,6 @@ import open3d as o3d
 
 
 class NormalizeSpaceDataset(torch.utils.data.Dataset):
-    """
-    Dataset class for loading and processing 3D point cloud data.
-
-    This class handles loading, preprocessing, and sampling of point cloud data
-    for use in deep learning models. It supports both .ply and .xyz file formats.
-    The preprocessing steps include:
-        1. Normalization: Centering and scaling the point cloud to fit within a unit sphere.
-        2. Farthest Point Sampling (FPS):  Downsampling the point cloud using FPS for a more uniform distribution.
-        3. Query Point Generation: Generating query points around the downsampled point cloud,
-           using a Gaussian distribution based on nearest neighbor distances.
-        4. Nearest Neighbor Search:  Finding the nearest neighbor in the original point cloud for each query point.
-
-    Args:
-        conf (Config): Configuration object containing data directory and other parameters.
-        dataname (str): Name of the data file (without extension).
-
-    Attributes:
-        device (torch.device):  Device for tensor operations ('cuda' or 'cpu').
-        conf (Config): Configuration object.
-        data_dir (str): Directory containing the data files.
-        np_data_name (str): Name of the preprocessed data file (with .pt extension).
-        point (torch.Tensor):  Downsampled point cloud (after FPS).
-        sample (torch.Tensor):  Query points generated around the downsampled point cloud.
-        point_gt (torch.Tensor): Original (high-resolution) point cloud.
-        sample_points_num (int): Number of query points.
-        object_bbox_min (torch.Tensor): Minimum coordinates of the bounding box.
-        object_bbox_max (torch.Tensor): Maximum coordinates of the bounding box.
-    """
-
     def __init__(self, conf, dataname):
         super().__init__()
         self.device = torch.device("cuda")  # Use CUDA if available
@@ -55,9 +26,13 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.process_data(self.data_dir, dataname)
             prep_data = self._load_processed_data(data_path)
 
-        self.points = prep_data["sample_near"]  # Points near the surface
-        self.samples = prep_data["query_points"]  # Sampled query points
-        self.points_gt = prep_data["pointcloud"]  # Original point cloud
+        self.points = prep_data["sample_near"]  # Points near the surface of the object.
+        self.samples = prep_data[
+            "query_points"
+        ]  # Query points used for sampling the space.
+        self.points_gt = prep_data[
+            "pointcloud"
+        ]  # The original, full-resolution point cloud.
 
         self.sample_points_num = self.samples.shape[0] - 1
         self._compute_bounding_box()
@@ -109,11 +84,11 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Processes the raw point cloud data and saves it to a .pt file."""
         pointcloud = self._load_raw_pointcloud(data_dir, dataname)
         pointcloud = self._normalize_pointcloud(pointcloud)
-        pc = self.FPS_sampling(pointcloud)  # Downsample using FPS
-        pointcloud = torch.from_numpy(pc).to(self.device).float()
+        pointcloud = self.FPS_sampling(pointcloud)  # Downsample using FPS
+        pointcloud = torch.from_numpy(pointcloud).to(self.device).float()
 
         grid_f = self._generate_grid_points()
-        query_points = self._generate_query_points(pointcloud, pc)
+        query_points = self._generate_query_points(pointcloud)
         query_points = torch.cat(
             [query_points, grid_f]
         ).float()  # Combine query and grid points
@@ -172,7 +147,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         grid_f = grid[torch.randperm(grid.shape[0])[:grid_samp]]
         return grid_f
 
-    def _generate_query_points(self, pointcloud, pc, query_per_point=20):
+    def _generate_query_points(self, pointcloud, query_per_point=20):
         """Generates query points around the downsampled point cloud."""
         # Use cKDTree for efficient nearest neighbor search
         ptree = cKDTree(pointcloud.detach().cpu().numpy())
@@ -185,7 +160,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         std = torch.from_numpy(std).to(self.device).float().unsqueeze(-1)
 
         query_points = []
-        for idx, p in enumerate(pc):
+        for idx, p in enumerate(pointcloud):
             # Generate query points using a Gaussian distribution
             q_loc = (
                 torch.normal(mean=0.0, std=std[idx].item(), size=(query_per_point, 3))
