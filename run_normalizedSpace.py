@@ -24,6 +24,7 @@ import re
 warnings.filterwarnings("ignore")
 import torch.nn as nn
 from datetime import datetime
+import subprocess
 
 
 ################### FUNSR Implementation ##################################3
@@ -286,21 +287,22 @@ class Runner:
         return mesh
 
     def file_backup(self):
-        dir_lis = self.conf["general.recording"]
-        os.makedirs(os.path.join(self.base_exp_dir, "recording"), exist_ok=True)
-        for dir_name in dir_lis:
-            cur_dir = os.path.join(self.base_exp_dir, "recording", dir_name)
-            os.makedirs(cur_dir, exist_ok=True)
-            files = os.listdir(dir_name)
-            for f_name in files:
-                if f_name[-3:] == ".py":
-                    copyfile(
-                        os.path.join(dir_name, f_name), os.path.join(cur_dir, f_name)
-                    )
+        os.makedirs(os.path.join(self.base_exp_dir), exist_ok=True)
 
-        copyfile(
-            self.conf_path, os.path.join(self.base_exp_dir, "recording", "config.conf")
-        )
+        try:
+            # Get git commit hash
+            git_hash = (
+                subprocess.check_output(["git", "rev-parse", "HEAD"])
+                .decode("ascii")
+                .strip()
+            )
+
+            # Save git hash to a file
+            with open(os.path.join(self.base_exp_dir, "git_version.txt"), "w") as f:
+                f.write(f"Git commit hash: {git_hash}\n")
+
+        except Exception as e:
+            print(f"Warning: Could not backup git version: {str(e)}")
 
     def load_checkpoint(self, checkpoint_name):
         print(os.path.join(self.base_exp_dir, "checkpoints", checkpoint_name))
