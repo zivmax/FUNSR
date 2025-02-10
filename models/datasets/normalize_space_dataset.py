@@ -1,5 +1,4 @@
 import torch
-import torch.nn.functional as F
 import numpy as np
 import os
 from scipy.spatial import cKDTree
@@ -7,26 +6,28 @@ import trimesh
 import open3d as o3d
 
 
-######Load data############
-class Dataset:
+class NormalizeSpaceDataset(torch.utils.data.Dataset):
     def __init__(self, conf, dataname):
-        super(Dataset, self).__init__()
+        super().__init__()
         self.device = torch.device("cuda")
         self.conf = conf
 
         self.data_dir = conf.get_string("data_dir")
         self.np_data_name = dataname + ".pt"
 
-        if os.path.exists(os.path.join(self.data_dir, self.np_data_name)):
+        data_path = os.path.join(self.data_dir, self.np_data_name)
+        if os.path.exists(data_path):
             print("Data existing. Loading data...")
+            prep_data = torch.load(
+                data_path, map_location=self.device, weights_only=True
+            )
         else:
             print("Data not found. Processing data...")
             self.process_data(self.data_dir, dataname)
+            prep_data = torch.load(
+                data_path, map_location=self.device, weights_only=True
+            )
 
-        print("Loading from saved data...")
-        prep_data = torch.load(
-            os.path.join(self.data_dir, self.np_data_name), map_location=self.device
-        )
         self.point = prep_data["sample_near"]
         self.sample = prep_data["query_points"]
         self.point_gt = prep_data["pointcloud"]
@@ -40,6 +41,12 @@ class Dataset:
 
         print("NP Load data: End")
 
+    def __len__(self):
+        return self.sample.shape[0]
+
+    def __getitem__(self, idx):
+        return self.point[idx], self.sample[idx], self.point_gt
+
     def np_train_data(self, batch_size):
         index_coarse = np.random.choice(10, 1)
         index_fine = np.random.choice(
@@ -50,18 +57,19 @@ class Dataset:
         sample = self.sample[index]
         return points, sample, self.point_gt
 
-    ########Convert the .ply file into .npz ############
     def process_data(self, data_dir, dataname):
-        if os.path.exists(os.path.join(data_dir, dataname) + ".ply"):
-            pointcloud = trimesh.load(
-                os.path.join(data_dir, dataname) + ".ply"
-            ).vertices
+        ply_path = os.path.join(data_dir, dataname + ".ply")
+        xyz_path = os.path.join(data_dir, dataname + ".xyz")
+
+        if os.path.exists(ply_path):
+            pointcloud = trimesh.load(ply_path).vertices
             pointcloud = np.asarray(pointcloud)
-        elif os.path.exists(os.path.join(data_dir, dataname) + ".xyz"):
-            pointcloud = np.load(os.path.join(data_dir, dataname)) + ".xyz"
+        elif os.path.exists(xyz_path):
+            pointcloud = np.load(xyz_path) + ".xyz"
         else:
-            print("Only support .xyz or .ply data. Please make adjust your data.")
-            exit()
+            raise FileNotFoundError(
+                "Only support .xyz or .ply data. Please adjust your data."
+            )
 
         shape_scale = np.max(
             [
@@ -238,7 +246,6 @@ class Dataset:
 
         return nearest_neighbors, min_dist.unsqueeze(-1)
 
-    ######Find the nearest neighbour points ##########
     def search_nearest_point(self, point_batch, point_gt):
         num_point_batch, num_point_gt = point_batch.shape[0], point_gt.shape[0]
         point_batch = point_batch.unsqueeze(1).repeat(1, num_point_gt, 1)

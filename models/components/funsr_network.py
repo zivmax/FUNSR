@@ -1,13 +1,10 @@
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 import numpy as np
-import trimesh
 from models.embedder import get_embedder
 
 
-##########Define FUNSR SDF Network#################
-class funsr(nn.Module):
+class FUNSRNetwork(nn.Module):
     def __init__(
         self,
         d_in,
@@ -22,9 +19,9 @@ class funsr(nn.Module):
         weight_norm=True,
         inside_outside=False,
     ):
-        super(funsr, self).__init__()
+        super().__init__()
 
-        dims = [d_in] + [d_hidden for _ in range(n_layers)] + [d_out]
+        dims = [d_in] + [d_hidden] * n_layers + [d_out]
 
         self.embed_fn_fine = None
         if multires > 0:
@@ -47,28 +44,23 @@ class funsr(nn.Module):
 
             if geometric_init:
                 if l == self.num_layers - 2:
+                    std = 0.0001
                     if not inside_outside:
-                        torch.nn.init.normal_(
-                            lin.weight,
-                            mean=np.sqrt(np.pi) / np.sqrt(dims[l]),
-                            std=0.0001,
+                        nn.init.normal_(
+                            lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=std
                         )
-                        torch.nn.init.constant_(lin.bias, -bias)
+                        nn.init.constant_(lin.bias, -bias)
                     else:
-                        torch.nn.init.normal_(
-                            lin.weight,
-                            mean=np.sqrt(np.pi) / np.sqrt(dims[l]),
-                            std=0.0001,
+                        nn.init.normal_(
+                            lin.weight, mean=np.sqrt(np.pi) / np.sqrt(dims[l]), std=std
                         )
-                        torch.nn.init.constant_(lin.bias, bias)
+                        nn.init.constant_(lin.bias, bias)
                 else:
-                    torch.nn.init.constant_(lin.bias, 0.0)
-                    torch.nn.init.normal_(
-                        lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim)
-                    )
+                    nn.init.constant_(lin.bias, 0.0)
+                    nn.init.normal_(lin.weight, 0.0, np.sqrt(2) / np.sqrt(out_dim))
 
             if weight_norm:
-                lin = nn.utils.weight_norm(lin)
+                lin = nn.utils.parametrizations.weight_norm(lin)
             setattr(self, "lin" + str(l), lin)
 
         self.activation = nn.ReLU()
@@ -109,21 +101,3 @@ class funsr(nn.Module):
             only_inputs=True,
         )[0]
         return gradients.unsqueeze(1)
-
-
-def as_mesh(scene_or_mesh):
-    if isinstance(scene_or_mesh, trimesh.Scene):
-        if len(scene_or_mesh.geometry) == 0:
-            mesh = None
-        else:
-            mesh = trimesh.util.concatenate(
-                tuple(
-                    trimesh.Trimesh(vertices=g.vertices, faces=g.faces)
-                    for g in scene_or_mesh.geometry.values()
-                )
-            )
-    else:
-        print("is_mesh")
-        assert isinstance(scene_or_mesh, trimesh.Trimesh)
-        mesh = scene_or_mesh
-    return mesh
