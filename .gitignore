@@ -1,2 +1,3 @@
 outs/
 *.pt
+__pycache__/
