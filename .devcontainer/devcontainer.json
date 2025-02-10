@@ -1,0 +1,31 @@
+{
+    "name": "FUNSR Dev",
+    "image": "funsr",
+    "runArgs": [
+        "--gpus",
+        "all"
+    ],
+    "features": {
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/sshd:1": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-python.python",
+                "ms-python.vscode-pylance",
+                "ms-python.black-formatter",
+                "ms-dotnettools.csdevkit",
+                "w88975.code-translate",
+                "github.copilot",
+                "mechatroner.rainbow-csv"
+            ],
+            "settings": {
+                "[python]": {
+                    "editor.defaultFormatter": "ms-python.black-formatter",
+                    "editor.formatOnSave": true
+                }
+            }
+        }
+    }
+}
