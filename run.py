@@ -8,9 +8,9 @@ import mcubes
 import trimesh
 import subprocess
 
-from models.components.sdf_network import SDFNet
-from models.components.discriminator import Discriminator
-from models.datasets.normalize_space_dataset import NormalizeSpaceDataset
+from models.sdf import SDFNet
+from models.discriminator import Discriminator
+from utils.normalize_space_dataset import NormalizeSpaceDataset
 from utils.config import Config
 from tqdm import tqdm
 
