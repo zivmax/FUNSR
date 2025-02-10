@@ -14,6 +14,7 @@ from models.components.discriminator import Discriminator
 from models.datasets.normalize_space_dataset import NormalizeSpaceDataset
 from utils.config import Config
 from utils.logger import setup_logger, print_log
+from tqdm import tqdm
 
 
 class Trainer:
@@ -59,7 +60,7 @@ class Trainer:
         )
 
         self.iter_step = 0
-        self.maxiter = self.config.get_int("train.maxiter")
+        self.epoch = self.config.get_int("train.epoch")
         self.save_freq = self.config.get_int("train.save_freq")
         self.val_freq = self.config.get_int("train.val_freq")
         self.report_freq = self.config.get_int("train.report_freq")
@@ -89,7 +90,7 @@ class Trainer:
 
     def update_learning_rate(self, iter_i):
         warm_up = self.warm_up_end
-        max_iter = self.maxiter
+        max_iter = self.epoch * len(self.dataloader)
         init_lr = self.config.get_float("train.learning_rate")
         if iter_i < warm_up:
             lr = iter_i / warm_up
@@ -111,13 +112,19 @@ class Trainer:
         return torch.mean((pred_fake - 1) ** 2)
 
     def train(self):
-        timestamp_start = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-        print_log(f"Start time: {timestamp_start}", logger=self.logger)
+        total_loss = torch.tensor(0.0)
 
-        for iter_i in range(self.maxiter):
-            self.update_learning_rate(iter_i)
-
-            for points, samples, point_gt in self.dataloader:
+        for epoch in range(self.epoch):
+            epoch_loss = 0.0
+            epoch_steps = 0
+            progress_bar = tqdm(
+                self.dataloader,
+                desc=f"Epoch {epoch+1}/{self.epoch}",
+                leave=True,
+                dynamic_ncols=True,
+            )
+            for points, samples, point_gt in progress_bar:
+                self.update_learning_rate(self.iter_step)
                 points, samples, point_gt = (
                     points.to(self.device),
                     samples.to(self.device),
@@ -162,34 +169,33 @@ class Trainer:
                 total_loss.backward()
                 self.sdf_optimizer.step()
 
+                epoch_loss += total_loss.item()
+                epoch_steps += 1
+
                 # Logging and Validation
                 self.iter_step += 1
-                if self.iter_step % self.report_freq == 0:
-                    print_log(
-                        f"Iter: {self.iter_step:8d}, Total Loss: {total_loss.item():.6f}, LR: {self.sdf_optimizer.param_groups[0]['lr']:.6f}",
-                        logger=self.logger,
-                    )
 
-                if self.iter_step % self.val_freq == 0:
-                    self.validate_mesh(
-                        resolution=256,
-                        threshold=self.args.mcubes_threshold,
-                        point_gt=point_gt,
-                        iter_step=self.iter_step,
-                    )
+                progress_bar.set_postfix(
+                    {
+                        "LR": f"{self.sdf_optimizer.param_groups[0]['lr']:.6f}",
+                        "AvgL": (
+                            f"{epoch_loss / epoch_steps:.6f}"
+                            if epoch_steps > 0
+                            else "0.000000"
+                        ),
+                    }
+                )
 
-                if self.iter_step % self.save_freq == 0:
-                    self.save_checkpoint()
+            if epoch % self.val_freq == 0:
+                self.validate_mesh(
+                    resolution=256,
+                    threshold=self.args.mcubes_threshold,
+                    point_gt=point_gt,
+                    iter_step=self.iter_step,
+                )
 
-        timestamp_end = time.strftime("%Y%m%d_%H%M%S", time.localtime())
-        start_datetime = datetime.strptime(timestamp_start, "%Y%m%d_%H%M%S")
-        end_datetime = datetime.strptime(timestamp_end, "%Y%m%d_%H%M%S")
-        duration = end_datetime - start_datetime
-        duration_in_minutes = duration.total_seconds() / 60
-        print_log(
-            f"Training finished in {duration_in_minutes:.2f} minutes.",
-            logger=self.logger,
-        )
+            if epoch % self.save_freq == 0:
+                self.save_checkpoint()
 
     def validate_mesh(self, resolution, threshold, point_gt, iter_step):
         output_dir = os.path.join(self.base_exp_dir, "outputs")
