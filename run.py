@@ -12,7 +12,6 @@ from models.components.sdf_network import SDFNet
 from models.components.discriminator import Discriminator
 from models.datasets.normalize_space_dataset import NormalizeSpaceDataset
 from utils.config import Config
-from utils.logger import setup_logger, print_log
 from tqdm import tqdm
 
 
@@ -25,10 +24,6 @@ class Trainer:
             self.config.get_string("general.base_exp_dir"), args.dir
         )
         os.makedirs(self.base_exp_dir, exist_ok=True)
-
-        self.logger = setup_logger(
-            name="outs", log_file=os.path.join(self.base_exp_dir, "logger.log")
-        )
 
         self.dataset = NormalizeSpaceDataset(
             self.config.get_config("dataset"), args.dataname
@@ -207,7 +202,6 @@ class Trainer:
         mesh.export(os.path.join(output_dir, f"{iter_step:08d}_{threshold}.ply"))
 
     def extract_geometry(self, resolution, threshold, query_func):
-        print_log(f"Creating mesh with threshold: {threshold}", logger=self.logger)
         u = self.extract_fields(resolution, query_func).numpy()
         vertices, triangles = mcubes.marching_cubes(u, threshold)
 
@@ -302,9 +296,6 @@ class Trainer:
         self.sdf_optimizer.load_state_dict(checkpoint["sdf_optimizer"])
         self.dis_optimizer.load_state_dict(checkpoint["dis_optimizer"])
         self.iter_step = checkpoint["iter_step"]
-        print_log(
-            f"Loaded checkpoint {checkpoint_name} at iter {self.iter_step}", self.logger
-        )
 
 
 if __name__ == "__main__":
