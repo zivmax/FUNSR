@@ -7,129 +7,211 @@ import open3d as o3d
 
 
 class NormalizeSpaceDataset(torch.utils.data.Dataset):
+    """
+    Dataset class for loading and processing 3D point cloud data.
+
+    This class handles loading, preprocessing, and sampling of point cloud data
+    for use in deep learning models. It supports both .ply and .xyz file formats.
+    The preprocessing steps include:
+        1. Normalization: Centering and scaling the point cloud to fit within a unit sphere.
+        2. Farthest Point Sampling (FPS):  Downsampling the point cloud using FPS for a more uniform distribution.
+        3. Query Point Generation: Generating query points around the downsampled point cloud,
+           using a Gaussian distribution based on nearest neighbor distances.
+        4. Nearest Neighbor Search:  Finding the nearest neighbor in the original point cloud for each query point.
+
+    Args:
+        conf (Config): Configuration object containing data directory and other parameters.
+        dataname (str): Name of the data file (without extension).
+
+    Attributes:
+        device (torch.device):  Device for tensor operations ('cuda' or 'cpu').
+        conf (Config): Configuration object.
+        data_dir (str): Directory containing the data files.
+        np_data_name (str): Name of the preprocessed data file (with .pt extension).
+        point (torch.Tensor):  Downsampled point cloud (after FPS).
+        sample (torch.Tensor):  Query points generated around the downsampled point cloud.
+        point_gt (torch.Tensor): Original (high-resolution) point cloud.
+        sample_points_num (int): Number of query points.
+        object_bbox_min (torch.Tensor): Minimum coordinates of the bounding box.
+        object_bbox_max (torch.Tensor): Maximum coordinates of the bounding box.
+    """
+
     def __init__(self, conf, dataname):
         super().__init__()
-        self.device = torch.device("cuda")
+        self.device = torch.device("cuda")  # Use CUDA if available
         self.conf = conf
-
         self.data_dir = conf.get_string("data_dir")
-        self.np_data_name = dataname + ".pt"
+        self.np_data_name = dataname + ".pt"  # Preprocessed data file name
+        self._load_or_process_data(dataname)
 
+    def _load_or_process_data(self, dataname):
+        """Loads preprocessed data or processes it if not available."""
         data_path = os.path.join(self.data_dir, self.np_data_name)
         if os.path.exists(data_path):
             print("Data existing. Loading data...")
-            prep_data = torch.load(
-                data_path, map_location=self.device, weights_only=True
-            )
+            prep_data = self._load_processed_data(data_path)
         else:
             print("Data not found. Processing data...")
             self.process_data(self.data_dir, dataname)
-            prep_data = torch.load(
-                data_path, map_location=self.device, weights_only=True
-            )
+            prep_data = self._load_processed_data(data_path)
 
-        self.point = prep_data["sample_near"]
-        self.sample = prep_data["query_points"]
-        self.point_gt = prep_data["pointcloud"]
+        self.point = prep_data["sample_near"]  # Points near the surface
+        self.sample = prep_data["query_points"]  # Sampled query points
+        self.point_gt = prep_data["pointcloud"]  # Original point cloud
 
         self.sample_points_num = self.sample.shape[0] - 1
-        self.object_bbox_min, _ = torch.min(self.point, dim=0)
-        self.object_bbox_min = self.object_bbox_min - 0.05
-        self.object_bbox_max, _ = torch.max(self.point, dim=0)
-        self.object_bbox_max = self.object_bbox_max + 0.05
-        print("Data bounding box:", self.object_bbox_min, self.object_bbox_max)
-
+        self._compute_bounding_box()
         print("NP Load data: End")
 
+    def _load_processed_data(self, data_path):
+        """Loads preprocessed data from a .pt file."""
+        return torch.load(data_path, map_location=self.device, weights_only=True)
+
+    def _compute_bounding_box(self):
+        """Computes and stores the bounding box of the downsampled point cloud."""
+        self.object_bbox_min, _ = torch.min(self.point, dim=0)
+        self.object_bbox_min = self.object_bbox_min - 0.05  # Add padding
+        self.object_bbox_max, _ = torch.max(self.point, dim=0)
+        self.object_bbox_max = self.object_bbox_max + 0.05  # Add padding
+        print("Data bounding box:", self.object_bbox_min, self.object_bbox_max)
+
     def __len__(self):
+        """Returns the total number of query points."""
         return self.sample.shape[0]
 
     def __getitem__(self, idx):
+        """Returns a single data point (point, sample, point_gt)."""
         return self.point[idx], self.sample[idx], self.point_gt
 
     def np_train_data(self, batch_size):
-        index_coarse = np.random.choice(10, 1)
+        """
+        Samples a batch of data for training.
+
+        Args:
+            batch_size (int): The desired batch size.
+
+        Returns:
+            tuple: A tuple containing the sampled points, query points, and the original point cloud.
+        """
+        # The original logic seems to divide the query points into groups of 10.
+        # It randomly picks one index from the first group (0-9) and 'batch_size' indices
+        # from the remaining groups, then combines them.
+        index_coarse = np.random.choice(10, 1)  # Random index from the first 10
         index_fine = np.random.choice(
             self.sample_points_num // 10, batch_size, replace=False
-        )
-        index = index_fine * 10 + index_coarse
+        )  # Random indices from the rest
+        index = index_fine * 10 + index_coarse  # Combine indices
         points = self.point[index]
         sample = self.sample[index]
         return points, sample, self.point_gt
 
     def process_data(self, data_dir, dataname):
+        """Processes the raw point cloud data and saves it to a .pt file."""
+        pointcloud = self._load_raw_pointcloud(data_dir, dataname)
+        pointcloud = self._normalize_pointcloud(pointcloud)
+        pc = self.FPS_sampling(pointcloud, data_dir, dataname)  # Downsample using FPS
+        pointcloud = torch.from_numpy(pc).to(self.device).float()
+
+        grid_f = self._generate_grid_points()
+        query_points = self._generate_query_points(pointcloud, pc)
+        query_points = torch.cat(
+            [query_points, grid_f]
+        ).float()  # Combine query and grid points
+
+        sample_near = self._find_nearest_neighbors(query_points, pointcloud)
+
+        self._save_processed_data(
+            data_dir, dataname, pointcloud, query_points, sample_near
+        )
+
+    def _load_raw_pointcloud(self, data_dir, dataname):
+        """Loads the raw point cloud data from either a .ply or .xyz file."""
         ply_path = os.path.join(data_dir, dataname + ".ply")
         xyz_path = os.path.join(data_dir, dataname + ".xyz")
 
         if os.path.exists(ply_path):
             pointcloud = trimesh.load(ply_path).vertices
-            pointcloud = np.asarray(pointcloud)
         elif os.path.exists(xyz_path):
-            pointcloud = np.load(xyz_path) + ".xyz"
+            pointcloud = np.loadtxt(xyz_path)  # Corrected: Use np.loadtxt for .xyz
         else:
             raise FileNotFoundError(
                 "Only support .xyz or .ply data. Please adjust your data."
             )
+        return np.asarray(pointcloud)
 
+    def _normalize_pointcloud(self, pointcloud):
+        """Normalizes the point cloud to center it and scale it to a unit sphere."""
+        # Calculate the scale based on the maximum extent of the point cloud
         shape_scale = np.max(
-            [
-                np.max(pointcloud[:, 0]) - np.min(pointcloud[:, 0]),
-                np.max(pointcloud[:, 1]) - np.min(pointcloud[:, 1]),
-                np.max(pointcloud[:, 2]) - np.min(pointcloud[:, 2]),
-            ]
-        )
-        shape_center = [
-            (np.max(pointcloud[:, 0]) + np.min(pointcloud[:, 0])) / 2,
-            (np.max(pointcloud[:, 1]) + np.min(pointcloud[:, 1])) / 2,
-            (np.max(pointcloud[:, 2]) + np.min(pointcloud[:, 2])) / 2,
-        ]
+            np.ptp(pointcloud, axis=0)
+        )  # ptp = peak-to-peak (max - min)
+        shape_center = np.mean(
+            pointcloud, axis=0
+        )  # Calculate the center of the point cloud
         pointcloud = pointcloud - shape_center
         pointcloud = pointcloud / shape_scale
+        return pointcloud
 
-        pc = self.FPS_sampling(pointcloud, data_dir, dataname)
-
-        pointcloud = torch.from_numpy(pc).to(self.device).float()
-
-        grid_samp = 30000
+    def _generate_grid_points(self, grid_samp=30000):
+        """Generates a set of grid points within the bounding box."""
 
         def gen_grid(start, end, num):
+            """Generates a 3D grid of points."""
             x = np.linspace(start, end, num=num)
             y = np.linspace(start, end, num=num)
             z = np.linspace(start, end, num=num)
             g = np.meshgrid(x, y, z)
             positions = np.vstack(list(map(np.ravel, g)))
-            return positions.swapaxes(0, 1)
+            return positions.T  # Transpose to get (num_points, 3)
 
-        dot5 = gen_grid(-0.5, 0.5, 70)
-        dot10 = gen_grid(-1.0, 1.0, 50)
+        dot5 = gen_grid(-0.5, 0.5, 70)  # Dense grid around the origin
+        dot10 = gen_grid(-1.0, 1.0, 50)  # Less dense grid further away
         grid = np.concatenate((dot5, dot10))
-        # grid = dot5
         grid = torch.from_numpy(grid).to(self.device).float()
-        grid_f = grid[torch.randperm(grid.shape[0])[0:grid_samp]]
+        # Randomly sample a subset of the grid points
+        grid_f = grid[torch.randperm(grid.shape[0])[:grid_samp]]
+        return grid_f
 
-        query_per_point = 20
-        query_points = self.sample_query2(query_per_point, pointcloud, pc)
+    def _generate_query_points(self, pointcloud, pc, query_per_point=20):
+        """Generates query points around the downsampled point cloud."""
+        # Use cKDTree for efficient nearest neighbor search
+        ptree = cKDTree(pointcloud.detach().cpu().numpy())
+        # Calculate standard deviations based on 51st nearest neighbor distances
+        std = []
+        for p in np.array_split(pointcloud.detach().cpu().numpy(), 100, axis=0):
+            d = ptree.query(p, 51)  # Find distances to the 51 nearest neighbors
+            std.append(d[0][:, -1])  # Use the distance to the 51st neighbor as std
+        std = np.concatenate(std)
+        std = torch.from_numpy(std).to(self.device).float().unsqueeze(-1)
 
-        # concat sampled points with grid points
-        query_points = torch.cat([query_points, grid_f]).float()
+        query_points = []
+        for idx, p in enumerate(pc):
+            # Generate query points using a Gaussian distribution
+            q_loc = (
+                torch.normal(mean=0.0, std=std[idx].item(), size=(query_per_point, 3))
+                .to(self.device)
+                .float()
+            )
+            q = p + q_loc  # Add the offset to the downsampled point
+            query_points.append(q)
 
-        ## find nearest neiboring point cloud for each query point
-        POINT_NUM = 1000  # divide by batch to avoid out-of-memory
-        query_points_nn = torch.reshape(query_points, (-1, POINT_NUM, 3))
-        sample_near_tmp = []
+        return torch.cat(query_points)
+
+    def _find_nearest_neighbors(self, query_points, pointcloud, point_num=1000):
+        """Finds the nearest neighbor in the original point cloud for each query point."""
+        # Process in chunks to avoid out-of-memory errors
+        query_points_nn = torch.reshape(query_points, (-1, point_num, 3))
         sample_near = []
         for j in range(query_points_nn.shape[0]):
-            nearest_idx = self.search_nearest_point(
-                torch.tensor(query_points_nn[j]).float().cuda(),
-                torch.tensor(pointcloud).float().cuda(),
-            )
+            nearest_idx = self.search_nearest_point(query_points_nn[j], pointcloud)
             nearest_points = pointcloud[nearest_idx]
-            nearest_points = nearest_points.reshape(-1, 3)
-            sample_near_tmp.append(nearest_points)
-        sample_near_tmp = torch.stack(sample_near_tmp, 0)
-        sample_near_tmp = sample_near_tmp.reshape(-1, 3)
-        sample_near = sample_near_tmp
+            sample_near.append(nearest_points)
+        return torch.cat(sample_near)
 
+    def _save_processed_data(
+        self, data_dir, dataname, pointcloud, query_points, sample_near
+    ):
+        """Saves the processed data to a .pt file."""
         print("Saving files...")
         torch.save(
             {
@@ -141,119 +223,51 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         )
 
     def FPS_sampling(self, point_cloud, data_dir, dataname):
+        """
+        Performs Farthest Point Sampling (FPS) on the point cloud.
+
+        Args:
+            point_cloud (np.ndarray): The input point cloud.
+            data_dir (str): Directory to save intermediate files (if needed).
+            dataname (str): Name of the data file.
+
+        Returns:
+            np.ndarray: The downsampled point cloud.
+        """
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(point_cloud.reshape(-1, 3))
 
-        pcd_concat = o3d.geometry.PointCloud()
-
         if len(pcd.points) > 60000:
-            pcd_down_1 = pcd.farthest_point_down_sample(5000)  # pcd: CloudPoint
-            pcd_down_2 = pcd.farthest_point_down_sample(
-                15000
-            )  # pcd: CloudPoint    else:
+            # If the point cloud is large, perform two-stage FPS
+            pcd_down_1 = pcd.farthest_point_down_sample(5000)
+            pcd_down_2 = pcd.farthest_point_down_sample(15000)
             pcdConcat = np.concatenate(
                 (np.asarray(pcd_down_1.points), np.asarray(pcd_down_2.points)), axis=0
             )
-            # o3d.io.write_point_cloud(os.path.join(data_dir, dataname)+'_ds.ply', pcd)
         else:
+            # Otherwise, use the original point cloud
             pcdConcat = np.asarray(pcd.points)
 
-        pcd_concat.points = o3d.utility.Vector3dVector(pcdConcat.reshape(-1, 3))
-
-        print("number of points:", len(pcd_concat.points))
-        point_cloud_concate = np.asarray(pcd_concat.points)
-        return point_cloud_concate
-
-    # find the 50th nearest neighbor for each point in pc
-    # this will be the std for the gaussian for generating query
-    def sample_query(self, query_per_point, pc):
-
-        # scale = 0.25
-
-        dists = torch.cdist(pc, pc)
-
-        std, _ = torch.topk(dists, 50, dim=-1, largest=False)  # shape: 1024, 50
-
-        std = std[:, -1].unsqueeze(-1)  # new shape is 1024, 1
-
-        query_points = (
-            torch.empty(size=(pc.shape[0] * query_per_point, 3)).to(self.device).float()
-        )
-        count = 0
-
-        for idx, p in enumerate(pc):
-
-            # query locations from p
-            q_loc = (
-                torch.normal(mean=0.0, std=std[idx].item(), size=(query_per_point, 3))
-                .to(self.device)
-                .float()
-            )
-
-            # query locations in space
-            q = p + q_loc
-
-            query_points[count : count + query_per_point] = q
-
-            count += query_per_point
-
-        return query_points
-
-    def sample_query2(self, query_per_point, pc, pointcloud):
-        # divide point cloud by bacth to avoid out-of-memory
-
-        ptree = cKDTree(pointcloud)
-        std = []
-        for p in np.array_split(pointcloud, 100, axis=0):
-            d = ptree.query(p, 51)
-            std.append(d[0][:, -1])
-
-        std = np.concatenate(std)
-
-        std = torch.from_numpy(std).to(self.device).float()
-
-        std = std.unsqueeze(-1)  # new shape is 1024, 1
-
-        query_points = (
-            torch.empty(size=(pc.shape[0] * query_per_point, 3)).to(self.device).float()
-        )
-        count = 0
-
-        for idx, p in enumerate(pc):
-
-            # query locations from p
-            q_loc = (
-                torch.normal(mean=0.0, std=std[idx].item(), size=(query_per_point, 3))
-                .to(self.device)
-                .float()
-            )
-
-            # query locations in space
-            q = p + q_loc
-
-            query_points[count : count + query_per_point] = q
-
-            count += query_per_point
-
-        return query_points
-
-    # the closest point in the pc for all query points
-    def find_nearest_query_neighbor(self, pc, query_points):
-
-        dists = torch.cdist(query_points, pc).detach().cpu().numpy()
-        min_dist, min_idx = torch.min(dists, dim=-1).detach().cpu().numpy()
-        nearest_neighbors = pc[min_idx]
-
-        return nearest_neighbors, min_dist.unsqueeze(-1)
+        print("number of points:", len(pcdConcat))
+        return pcdConcat
 
     def search_nearest_point(self, point_batch, point_gt):
+        """
+        Finds the index of the nearest point in point_gt for each point in point_batch.
+
+        Args:
+            point_batch (torch.Tensor): Batch of query points (shape: [N, 3]).
+            point_gt (torch.Tensor):  Ground truth point cloud (shape: [M, 3]).
+
+        Returns:
+            np.ndarray: Indices of the nearest neighbors in point_gt.
+        """
         num_point_batch, num_point_gt = point_batch.shape[0], point_gt.shape[0]
-        point_batch = point_batch.unsqueeze(1).repeat(1, num_point_gt, 1)
-        point_gt = point_gt.unsqueeze(0).repeat(num_point_batch, 1, 1)
+        # Expand dimensions to enable broadcasting
+        point_batch = point_batch.unsqueeze(1).expand(-1, num_point_gt, -1)
+        point_gt = point_gt.unsqueeze(0).expand(num_point_batch, -1, -1)
 
-        distances = torch.sqrt(
-            torch.sum((point_batch - point_gt) ** 2, axis=-1) + 1e-12
-        )
+        # Calculate squared Euclidean distances
+        distances = torch.sum((point_batch - point_gt) ** 2, axis=-1)
         dis_idx = torch.argmin(distances, axis=1).detach().cpu().numpy()
-
         return dis_idx
