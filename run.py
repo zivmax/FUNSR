@@ -7,9 +7,8 @@ import math
 import mcubes
 import trimesh
 import subprocess
-from datetime import datetime
 
-from models.components.funsr_network import FUNSRNetwork
+from models.components.sdf_network import SDFNet
 from models.components.discriminator import Discriminator
 from models.datasets.normalize_space_dataset import NormalizeSpaceDataset
 from utils.config import Config
@@ -41,9 +40,9 @@ class Trainer:
         )
 
         # Networks
-        self.sdf_network = FUNSRNetwork(
-            **self.config.get_config("model.sdf_network")
-        ).to(self.device)
+        self.sdf_network = SDFNet(**self.config.get_config("model.sdf_network")).to(
+            self.device
+        )
         self.discriminator = Discriminator(
             **self.config.get_config("model.discriminator")
         ).to(self.device)
