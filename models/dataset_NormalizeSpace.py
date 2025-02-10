@@ -89,7 +89,7 @@ class Dataset:
             y = np.linspace(start, end, num=num)
             z = np.linspace(start, end, num=num)
             g = np.meshgrid(x, y, z)
-            positions = np.vstack(map(np.ravel, g))
+            positions = np.vstack(list(map(np.ravel, g)))
             return positions.swapaxes(0, 1)
 
         dot5 = gen_grid(-0.5, 0.5, 70)
