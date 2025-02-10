@@ -49,7 +49,7 @@ pip install matplotlib
 ### Run FUNSR
 
 ```
-python run_normalizedSpace.py --gpu 0 --conf confs/conf.conf --dataname case000070.nii_ds  --dir case000070.nii_ds
+python run.py --gpu 0 --conf confs/conf.conf --dataname case000070.nii_ds  --dir case000070.nii_ds
  ```
 
  ### Contact
