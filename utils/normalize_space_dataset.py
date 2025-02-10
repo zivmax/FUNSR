@@ -109,7 +109,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Processes the raw point cloud data and saves it to a .pt file."""
         pointcloud = self._load_raw_pointcloud(data_dir, dataname)
         pointcloud = self._normalize_pointcloud(pointcloud)
-        pc = self.FPS_sampling(pointcloud, data_dir, dataname)  # Downsample using FPS
+        pc = self.FPS_sampling(pointcloud)  # Downsample using FPS
         pointcloud = torch.from_numpy(pc).to(self.device).float()
 
         grid_f = self._generate_grid_points()
@@ -222,7 +222,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             os.path.join(data_dir, dataname) + ".pt",
         )
 
-    def FPS_sampling(self, point_cloud, data_dir, dataname):
+    def FPS_sampling(self, point_cloud):
         """
         Performs Farthest Point Sampling (FPS) on the point cloud.
 
