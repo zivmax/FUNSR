@@ -27,17 +27,17 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.process_data(self.data_dir, dataname)
             prep_data: Dict[str, torch.Tensor] = self._load_processed_data(data_path)
 
-        self.points: torch.Tensor = prep_data[
+        self.queries_nearest: torch.Tensor = prep_data[
             "queries_nearest"
         ]  # Points near the surface of the object.
-        self.samples: torch.Tensor = prep_data[
+        self.query_points: torch.Tensor = prep_data[
             "query_points"
         ]  # Query points used for sampling the space.
         self.points_gt: torch.Tensor = prep_data[
             "pointcloud"
         ]  # The original, full-resolution point cloud.
 
-        self.sample_points_num: int = self.samples.shape[0] - 1
+        self.sample_points_num: int = self.query_points.shape[0] - 1
         self._compute_bounding_box()
         print("NP Load data: End")
 
@@ -49,19 +49,19 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Computes and stores the bounding box of the downsampled point cloud."""
         self.object_bbox_min: torch.Tensor
         self.object_bbox_max: torch.Tensor
-        self.object_bbox_min, _ = torch.min(self.points, dim=0)
+        self.object_bbox_min, _ = torch.min(self.queries_nearest, dim=0)
         self.object_bbox_min = self.object_bbox_min - 0.05  # Add padding
-        self.object_bbox_max, _ = torch.max(self.points, dim=0)
+        self.object_bbox_max, _ = torch.max(self.queries_nearest, dim=0)
         self.object_bbox_max = self.object_bbox_max + 0.05  # Add padding
         print("Data bounding box:", self.object_bbox_min, self.object_bbox_max)
 
     def __len__(self) -> int:
         """Returns the total number of query points."""
-        return self.samples.shape[0]
+        return self.query_points.shape[0]
 
     def __getitem__(self, idx: int) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Returns a single data point (point, sample, point_gt)."""
-        return self.points[idx], self.samples[idx], self.points_gt
+        return self.queries_nearest[idx], self.query_points[idx], self.points_gt
 
     def np_train_data(
         self, batch_size: int
@@ -85,8 +85,8 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.sample_points_num // 10, batch_size, replace=False
         )  # Random indices from the rest
         index: np.ndarray = index_fine * 10 + index_coarse  # Combine indices
-        points: torch.Tensor = self.points[index]
-        sample: torch.Tensor = self.samples[index]
+        points: torch.Tensor = self.queries_nearest[index]
+        sample: torch.Tensor = self.query_points[index]
         return points, sample, self.points_gt
 
     def process_data(self, data_dir: str, dataname: str) -> None:
