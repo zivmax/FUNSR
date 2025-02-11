@@ -286,7 +286,7 @@ class Trainer:
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--conf", type=str, default="./confs/conf.conf")
+    parser.add_argument("--conf", type=str, default="confs/conf.conf")
     parser.add_argument("--mode", type=str, default="train")
     parser.add_argument("--mcubes_threshold", type=float, default=0.0)
     parser.add_argument("--gpu", type=int, default=0)
@@ -298,8 +298,17 @@ if __name__ == "__main__":
     torch.cuda.set_device(args.gpu)
     trainer = Trainer(args)
 
-    if args.checkpoint:
-        trainer.load_checkpoint(args.checkpoint)
+    match args.mode:
+        case "train":
+            trainer.train()
 
-    if args.mode == "train":
-        trainer.train()
+        case "eval":
+            if args.checkpoint:
+                trainer.load_checkpoint(args.checkpoint)
+            trainer.validate_mesh(
+                resolution=256,
+                threshold=args.mcubes_threshold,
+                iter_step=0,
+            )
+        case _:
+            raise ValueError(f"Invalid mode: {args.mode}")
