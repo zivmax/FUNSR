@@ -108,43 +108,43 @@ class Trainer:
                 leave=True,
                 dynamic_ncols=True,
             )
-            for query_nearest, query_point, _ in progress_bar:
+            for queries_nearest, queries, _ in progress_bar:
                 self.update_learning_rate(self.iter_step)
-                query_nearest, query_point = (
-                    query_nearest.to(self.device),
-                    query_point.to(self.device),
+                queries_nearest, queries = (
+                    queries_nearest.to(self.device),
+                    queries.to(self.device),
                 )
 
-                # Train FUNSR Network
+                # Train SDF Network
                 self.sdf_optimizer.zero_grad()
-                query_point.requires_grad = True
-                gradient_query = self.sdf_network.gradient(query_point).squeeze()
-                sd_pred = self.sdf_network.sdf(query_point)
-                grad_norm = F.normalize(gradient_query, dim=1)
-                sd_pred_error = query_point - grad_norm * sd_pred
+                queries.requires_grad = True
+                gradients_query = self.sdf_network.gradient(queries).squeeze()
+                sds_pred = self.sdf_network.sdf(queries)
+                grads_norm = F.normalize(gradients_query, dim=1)
+                sds_pred_error = queries - grads_norm * sds_pred
 
                 loss_sdf = torch.linalg.norm(
-                    (query_nearest - sd_pred_error), ord=2, dim=-1
+                    (queries_nearest - sds_pred_error), ord=2, dim=-1
                 ).mean()
 
-                SCC = F.normalize(sd_pred_error - query_nearest, dim=1)
-                loss_SCC = (1.0 - F.cosine_similarity(grad_norm, SCC, dim=1)).mean()
+                SCC = F.normalize(sds_pred_error - queries_nearest, dim=1)
+                loss_SCC = (1.0 - F.cosine_similarity(grads_norm, SCC, dim=1)).mean()
                 G_loss = loss_sdf + loss_SCC * self.labmda_scc
 
                 # Train Discriminator
                 self.dis_optimizer.zero_grad()
-                d_fake_output = self.discriminator.sdf(sd_pred.detach())
+                d_fake_output = self.discriminator.sdf(sds_pred.detach())
                 d_fake_loss = torch.mean((d_fake_output) ** 2)
 
-                real_sd = torch.zeros(query_nearest.size(0), 1).to(self.device)
-                d_real_output = self.discriminator.sdf(real_sd)
+                sds_real = torch.zeros(queries_nearest.size(0), 1).to(self.device)
+                d_real_output = self.discriminator.sdf(sds_real)
                 d_real_loss = torch.mean((d_real_output - 1) ** 2)
                 dis_loss = d_real_loss + d_fake_loss
                 dis_loss.backward()
                 self.dis_optimizer.step()
 
                 # Total Loss
-                d_fake_output = self.discriminator.sdf(sd_pred)
+                d_fake_output = self.discriminator.sdf(sds_pred)
                 GAN_loss = torch.mean((d_fake_output - 1) ** 2)
                 total_loss = GAN_loss * self.labmda_adl + G_loss
                 total_loss.backward()
