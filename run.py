@@ -108,26 +108,26 @@ class Trainer:
                 leave=True,
                 dynamic_ncols=True,
             )
-            for points, sds_real, _ in progress_bar:
+            for query_nearest, query_point, _ in progress_bar:
                 self.update_learning_rate(self.iter_step)
-                points, sds_real = (
-                    points.to(self.device),
-                    sds_real.to(self.device),
+                query_nearest, query_point = (
+                    query_nearest.to(self.device),
+                    query_point.to(self.device),
                 )
 
                 # Train FUNSR Network
                 self.sdf_optimizer.zero_grad()
-                sds_real.requires_grad = True
-                gradients_sample = self.sdf_network.gradient(sds_real).squeeze()
-                sds_pred = self.sdf_network.sdf(sds_real)
+                query_point.requires_grad = True
+                gradients_sample = self.sdf_network.gradient(query_point).squeeze()
+                sds_pred = self.sdf_network.sdf(query_point)
                 grad_norm = F.normalize(gradients_sample, dim=1)
-                sds_pred_error = sds_real - grad_norm * sds_pred
+                sds_pred_error = query_point - grad_norm * sds_pred
 
                 loss_sdf = torch.linalg.norm(
-                    (points - sds_pred_error), ord=2, dim=-1
+                    (query_nearest - sds_pred_error), ord=2, dim=-1
                 ).mean()
 
-                SCC = F.normalize(sds_pred_error - points, dim=1)
+                SCC = F.normalize(sds_pred_error - query_nearest, dim=1)
                 loss_SCC = (1.0 - F.cosine_similarity(grad_norm, SCC, dim=1)).mean()
                 G_loss = loss_sdf + loss_SCC * self.labmda_scc
 
@@ -136,7 +136,7 @@ class Trainer:
                 d_fake_output = self.discriminator.sdf(sds_pred.detach())
                 d_fake_loss = torch.mean((d_fake_output) ** 2)
 
-                real_sds = torch.zeros(points.size(0), 1).to(self.device)
+                real_sds = torch.zeros(query_nearest.size(0), 1).to(self.device)
                 d_real_output = self.discriminator.sdf(real_sds)
                 d_real_loss = torch.mean((d_real_output - 1) ** 2)
                 dis_loss = d_real_loss + d_fake_loss

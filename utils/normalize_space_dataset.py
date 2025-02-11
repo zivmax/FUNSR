@@ -29,7 +29,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
 
         self.queries_nearest: torch.Tensor = prep_data[
             "queries_nearest"
-        ]  # Points near the surface of the object.
+        ]  # Nearest points of each query point.
         self.query_points: torch.Tensor = prep_data[
             "query_points"
         ]  # Query points used for sampling the space.
