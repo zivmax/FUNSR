@@ -12,13 +12,7 @@
             "console": "integratedTerminal",
             "args": [
                 "--gpu",
-                "0",
-                "--conf",
-                "confs/conf.conf",
-                "--dataname",
-                "case000070.nii_ds",
-                "--dir",
-                "case000070.nii_ds",
+                "1",
             ]
         }
     ]
