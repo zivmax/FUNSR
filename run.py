@@ -121,13 +121,13 @@ class Trainer:
                 gradients_query = self.sdf_network.gradient(queries).squeeze()
                 sds_pred = self.sdf_network.sdf(queries)
                 grads_norm = F.normalize(gradients_query, dim=1)
-                sds_pred_error = queries - grads_norm * sds_pred
+                surf_points_pred = queries - grads_norm * sds_pred
 
                 loss_sdf = torch.linalg.norm(
-                    (queries_nearest - sds_pred_error), ord=2, dim=-1
+                    (queries_nearest - surf_points_pred), ord=2, dim=-1
                 ).mean()
 
-                SCC = F.normalize(sds_pred_error - queries_nearest, dim=1)
+                SCC = F.normalize(surf_points_pred - queries_nearest, dim=1)
                 loss_SCC = (1.0 - F.cosine_similarity(grads_norm, SCC, dim=1)).mean()
                 G_loss = loss_sdf + loss_SCC * self.labmda_scc
 
