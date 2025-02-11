@@ -28,7 +28,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             prep_data: Dict[str, torch.Tensor] = self._load_processed_data(data_path)
 
         self.points: torch.Tensor = prep_data[
-            "sample_near"
+            "queries_nearest"
         ]  # Points near the surface of the object.
         self.samples: torch.Tensor = prep_data[
             "query_points"
@@ -102,12 +102,12 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             [query_points, grid_f]
         ).float()  # Combine query and grid points
 
-        sample_near: torch.Tensor = self._find_nearest_neighbors(
+        queries_nearest: torch.Tensor = self._find_nearest_neighbors(
             query_points, pointcloud
         )
 
         self._save_processed_data(
-            data_dir, dataname, pointcloud, query_points, sample_near
+            data_dir, dataname, pointcloud, query_points, queries_nearest
         )
 
     def _load_raw_pointcloud(self, data_dir: str, dataname: str) -> np.ndarray:
@@ -196,14 +196,14 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Finds the nearest neighbor in the original point cloud for each query point."""
         # Process in chunks to avoid out-of-memory errors
         query_points_nn: torch.Tensor = torch.reshape(query_points, (-1, point_num, 3))
-        sample_near: List[torch.Tensor] = []
+        queries_nearest: List[torch.Tensor] = []
         for j in range(query_points_nn.shape[0]):
             nearest_idx: np.ndarray = self.search_nearest_point(
                 query_points_nn[j], pointcloud
             )
             nearest_points: torch.Tensor = pointcloud[nearest_idx]
-            sample_near.append(nearest_points)
-        return torch.cat(sample_near)
+            queries_nearest.append(nearest_points)
+        return torch.cat(queries_nearest)
 
     def _save_processed_data(
         self,
@@ -211,7 +211,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         dataname: str,
         pointcloud: torch.Tensor,
         query_points: torch.Tensor,
-        sample_near: torch.Tensor,
+        queries_nearest: torch.Tensor,
     ) -> None:
         """Saves the processed data to a .pt file."""
         print("Saving files...")
@@ -219,7 +219,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             {
                 "pointcloud": pointcloud,
                 "query_points": query_points,
-                "sample_near": sample_near,
+                "queries_nearest": queries_nearest,
             },
             os.path.join(data_dir, dataname) + ".pt",
         )
