@@ -19,15 +19,15 @@ class Trainer:
     def __init__(self, args):
         self.args = args
         self.device = torch.device("cuda")
-        self.config = Config(args.conf, args.dataname)
+        self.config = Config(args.conf)
         self.base_exp_dir = os.path.join(
-            self.config.get_string("general.base_exp_dir"), args.dir
+            self.config.get_string("general.base_exp_dir"),
+            self.config.get_string("dataset.data_name"),
+            time.strftime("%Y-%m-%d_%H:%M:%S"),
         )
         os.makedirs(self.base_exp_dir, exist_ok=True)
 
-        self.dataset = NormalizeSpaceDataset(
-            self.config.get_config("dataset"), args.dataname
-        )
+        self.dataset = NormalizeSpaceDataset(self.config.get_config("dataset"))
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
             batch_size=self.config.get_int("train.batch_size"),
@@ -170,7 +170,7 @@ class Trainer:
             if epoch % self.val_freq == 0:
                 self.validate_mesh(
                     resolution=256,
-                    threshold=self.args.mcubes_threshold,
+                    threshold=self.config.get_float("reconstruct.mcubes_threshold"),
                     iter_step=self.iter_step,
                 )
 
@@ -178,7 +178,7 @@ class Trainer:
                 self.save_checkpoint()
 
     def validate_mesh(self, resolution, threshold, iter_step):
-        output_dir = os.path.join(self.base_exp_dir, "outputs")
+        output_dir = os.path.join(self.base_exp_dir, "reconstructed")
         os.makedirs(output_dir, exist_ok=True)
         mesh = self.extract_geometry(
             resolution=resolution,
@@ -288,10 +288,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--conf", type=str, default="confs/conf.conf")
     parser.add_argument("--mode", type=str, default="train")
-    parser.add_argument("--mcubes_threshold", type=float, default=0.0)
     parser.add_argument("--gpu", type=int, default=0)
-    parser.add_argument("--dir", type=str, default="exp")
-    parser.add_argument("--dataname", type=str, default="case000070.nii_ds")
     parser.add_argument("--checkpoint", type=str, default=None)
     args = parser.parse_args()
 
@@ -307,7 +304,7 @@ if __name__ == "__main__":
                 trainer.load_checkpoint(args.checkpoint)
             trainer.validate_mesh(
                 resolution=256,
-                threshold=args.mcubes_threshold,
+                threshold=trainer.config.get_float("reconstruct.mcubes_threshold"),
                 iter_step=0,
             )
         case _:

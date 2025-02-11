@@ -8,17 +8,19 @@ from typing import Dict, Tuple, List
 
 
 class NormalizeSpaceDataset(torch.utils.data.Dataset):
-    def __init__(self, conf: Dict, dataname: str):
+    def __init__(self, conf: Dict):
         super().__init__()
         self.device: torch.device = torch.device("cuda")  # Use CUDA if available
         self.conf: Dict = conf
         self.data_dir: str = conf.get_string("data_dir")
-        self.np_data_name: str = dataname + ".pt"  # Preprocessed data file name
-        self._load_or_process_data(dataname)
+        self.data_name: str = (
+            conf.get_string("data_name") + ".pt"
+        )  # Preprocessed data file name
+        self._load_or_process_data(conf.get_string("data_name"))
 
     def _load_or_process_data(self, dataname: str) -> None:
         """Loads preprocessed data or processes it if not available."""
-        data_path: str = os.path.join(self.data_dir, self.np_data_name)
+        data_path: str = os.path.join(self.data_dir, self.data_name)
         if os.path.exists(data_path):
             print("Data existing. Loading data...")
             prep_data: Dict[str, torch.Tensor] = self._load_processed_data(data_path)

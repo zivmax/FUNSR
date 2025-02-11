@@ -3,11 +3,9 @@ import os
 
 
 class Config:
-    def __init__(self, conf_path, data_name=None):
+    def __init__(self, conf_path):
         self.conf_path = conf_path
         self.conf = ConfigFactory.parse_file(self.conf_path)
-        if data_name:
-            self.conf["dataset.np_data_name"] = data_name + ".pt"
 
     def get_string(self, path):
         return self.conf.get_string(path)
