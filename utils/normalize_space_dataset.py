@@ -86,15 +86,17 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
 
     def _load_raw_pointcloud(self, data_dir: str, dataname: str) -> np.ndarray:
         """Loads the raw point cloud data from either a .ply or .xyz file."""
-        ply_path: str = os.path.join(data_dir, dataname + ".ply")
-        xyz_path: str = os.path.join(data_dir, dataname + ".xyz")
+        if not dataname.endswith((".ply", ".xyz")):
+            ply_path: str = os.path.join(data_dir, dataname + ".ply")
+            xyz_path: str = os.path.join(data_dir, dataname + ".xyz")
+        else:
+            ply_path: str = os.path.join(data_dir, dataname)
+            xyz_path: str = os.path.join(data_dir, dataname)
 
         if os.path.exists(ply_path):
             pointcloud: np.ndarray = trimesh.load(ply_path).vertices
         elif os.path.exists(xyz_path):
-            pointcloud: np.ndarray = np.loadtxt(
-                xyz_path
-            )  # Corrected: Use np.loadtxt for .xyz
+            pointcloud: np.ndarray = np.loadtxt(xyz_path)
         else:
             raise FileNotFoundError(
                 "Only support .xyz or .ply data. Please adjust your data."
