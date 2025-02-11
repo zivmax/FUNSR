@@ -63,32 +63,6 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Returns a single data point (point, sample, point_gt)."""
         return self.queries_nearest[idx], self.query_points[idx], self.points_gt
 
-    def np_train_data(
-        self, batch_size: int
-    ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-        """
-        Samples a batch of data for training.
-
-        Args:
-            batch_size (int): The desired batch size.
-
-        Returns:
-            tuple: A tuple containing the sampled points, query points, and the original point cloud.
-        """
-        # The original logic seems to divide the query points into groups of 10.
-        # It randomly picks one index from the first group (0-9) and 'batch_size' indices
-        # from the remaining groups, then combines them.
-        index_coarse: np.ndarray = np.random.choice(
-            10, 1
-        )  # Random index from the first 10
-        index_fine: np.ndarray = np.random.choice(
-            self.sample_points_num // 10, batch_size, replace=False
-        )  # Random indices from the rest
-        index: np.ndarray = index_fine * 10 + index_coarse  # Combine indices
-        points: torch.Tensor = self.queries_nearest[index]
-        sample: torch.Tensor = self.query_points[index]
-        return points, sample, self.points_gt
-
     def process_data(self, data_dir: str, dataname: str) -> None:
         """Processes the raw point cloud data and saves it to a .pt file."""
         pointcloud: np.ndarray = self._load_raw_pointcloud(data_dir, dataname)
