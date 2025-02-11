@@ -53,7 +53,8 @@ class Trainer:
             betas=(0.9, 0.999),
         )
 
-        self.iter_step = 0
+        self.iter_count = 0
+        self.epoch_count = 0
         self.epoch = self.config.get_int("train.epoch")
         self.save_freq = self.config.get_int("train.save_freq")
         self.val_freq = self.config.get_int("train.val_freq")
@@ -99,17 +100,17 @@ class Trainer:
     def train(self):
         total_loss = torch.tensor(0.0)
 
-        for epoch in range(self.epoch):
+        for self.epoch_count in range(self.epoch):
             epoch_loss = 0.0
             epoch_steps = 0
             progress_bar = tqdm(
                 self.dataloader,
-                desc=f"Epoch {epoch+1}/{self.epoch}",
+                desc=f"Epoch {self.epoch_count+1}/{self.epoch}",
                 leave=True,
                 dynamic_ncols=True,
             )
             for queries_nearest, queries, _ in progress_bar:
-                self.update_learning_rate(self.iter_step)
+                self.update_learning_rate(self.iter_count)
                 queries_nearest, queries = (
                     queries_nearest.to(self.device),
                     queries.to(self.device),
@@ -154,7 +155,7 @@ class Trainer:
                 epoch_steps += 1
 
                 # Logging and Validation
-                self.iter_step += 1
+                self.iter_count += 1
 
                 progress_bar.set_postfix(
                     {
@@ -167,17 +168,16 @@ class Trainer:
                     }
                 )
 
-            if epoch % self.val_freq == 0:
+            if self.epoch_count % self.val_freq == 0 and self.epoch_count > 0:
                 self.validate_mesh(
                     resolution=256,
                     threshold=self.config.get_float("reconstruct.mcubes_threshold"),
-                    iter_step=self.iter_step,
                 )
 
-            if epoch % self.save_freq == 0:
+            if self.epoch_count % self.save_freq == 0 and self.epoch_count > 0:
                 self.save_checkpoint()
 
-    def validate_mesh(self, resolution, threshold, iter_step):
+    def validate_mesh(self, resolution, threshold):
         output_dir = os.path.join(self.base_exp_dir, "reconstructed")
         os.makedirs(output_dir, exist_ok=True)
         mesh = self.extract_geometry(
@@ -185,7 +185,7 @@ class Trainer:
             threshold=threshold,
             query_func=lambda pts: -self.sdf_network.sdf(pts),
         )
-        mesh.export(os.path.join(output_dir, f"{iter_step:08d}_{threshold}.ply"))
+        mesh.export(os.path.join(output_dir, f"{self.epoch_count:4d}_{threshold}.ply"))
 
     def extract_geometry(self, resolution, threshold, query_func):
         u = self.extract_fields(resolution, query_func).numpy()
@@ -259,7 +259,7 @@ class Trainer:
             "discriminator": self.discriminator.state_dict(),
             "sdf_optimizer": self.sdf_optimizer.state_dict(),
             "dis_optimizer": self.dis_optimizer.state_dict(),
-            "iter_step": self.iter_step,
+            "iter_step": self.iter_count,
         }
         os.makedirs(os.path.join(self.base_exp_dir, "checkpoints"), exist_ok=True)
         torch.save(
@@ -267,7 +267,7 @@ class Trainer:
             os.path.join(
                 self.base_exp_dir,
                 "checkpoints",
-                f"ckpt_{self.iter_step:06d}.pth",
+                f"ckpt_{self.epoch_count:04d}.pth",
             ),
         )
 
@@ -281,7 +281,7 @@ class Trainer:
         self.discriminator.load_state_dict(checkpoint["discriminator"])
         self.sdf_optimizer.load_state_dict(checkpoint["sdf_optimizer"])
         self.dis_optimizer.load_state_dict(checkpoint["dis_optimizer"])
-        self.iter_step = checkpoint["iter_step"]
+        self.iter_count = checkpoint["iter_step"]
 
 
 if __name__ == "__main__":
