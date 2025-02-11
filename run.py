@@ -10,7 +10,7 @@ import subprocess
 
 from models.sdf import SDFNet
 from models.discriminator import Discriminator
-from utils.normalize_space_dataset import NormalizeSpaceDataset
+from utils.preprocess_dataset import NormalizeSpaceDataset
 from utils.config import Config
 from tqdm import tqdm
 
