@@ -30,7 +30,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             prep_data: Dict[str, torch.Tensor] = self._load_processed_data()
         else:
             print("Data not found. Processing data...")
-            self.process_data()
+            self._process_data()
             prep_data: Dict[str, torch.Tensor] = self._load_processed_data()
 
         self.queries_nearest: torch.Tensor = prep_data[
@@ -71,11 +71,11 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Returns a single data point (point, sample, point_gt)."""
         return self.queries_nearest[idx], self.query_points[idx], self.points_gt
 
-    def process_data(self) -> None:
+    def _process_data(self) -> None:
         """Processes the raw point cloud data and saves it to a .pt file."""
         pointcloud: np.ndarray = self._load_raw_pointcloud()
         pointcloud: np.ndarray = self._normalize_pointcloud(pointcloud)
-        pointcloud: np.ndarray = self.FPS_sampling(pointcloud)  # Downsample using FPS
+        pointcloud: np.ndarray = self._FPS_sampling(pointcloud)  # Downsample using FPS
         pointcloud: torch.Tensor = torch.from_numpy(pointcloud).to(self.device).float()
 
         grid_f: torch.Tensor = self._generate_grid_points()
@@ -198,7 +198,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             self.processed_data_path,
         )
 
-    def FPS_sampling(self, point_cloud: np.ndarray) -> np.ndarray:
+    def _FPS_sampling(self, point_cloud: np.ndarray) -> np.ndarray:
         """
         Performs Farthest Point Sampling (FPS) on the point cloud.
 
@@ -227,7 +227,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         print("number of points:", len(pcdConcat))
         return pcdConcat
 
-    def search_nearest_point(
+    def _search_nearest_point(
         self, point_batch: torch.Tensor, point_gt: torch.Tensor
     ) -> np.ndarray:
         """
