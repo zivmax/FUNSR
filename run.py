@@ -22,7 +22,7 @@ class Trainer:
         self.config = Config(args.conf)
         self.base_exp_dir = os.path.join(
             self.config.get_string("general.base_exp_dir"),
-            self.config.get_string("dataset.data_name"),
+            self.config.get_string("dataset.data_file_name"),
             time.strftime("%Y-%m-%d_%H:%M:%S"),
         )
         os.makedirs(self.base_exp_dir, exist_ok=True)

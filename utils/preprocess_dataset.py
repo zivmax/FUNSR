@@ -5,29 +5,33 @@ from scipy.spatial import cKDTree
 import trimesh
 import open3d as o3d
 from typing import Dict, Tuple, List
+from utils.config import Config
 
 
 class NormalizeSpaceDataset(torch.utils.data.Dataset):
-    def __init__(self, conf: Dict):
+    def __init__(self, conf: Config):
         super().__init__()
         self.device: torch.device = torch.device("cuda")  # Use CUDA if available
         self.conf: Dict = conf
         self.data_dir: str = conf.get_string("data_dir")
-        self.data_name: str = (
-            conf.get_string("data_name") + ".pt"
-        )  # Preprocessed data file name
-        self._load_or_process_data(conf.get_string("data_name"))
+        self.raw_data_file_name: str = conf.get_string("data_file_name")
+        self.data_name: str = ".".join(self.raw_data_file_name.split(".")[:-1])
+        self.raw_data_path: str = os.path.join(self.data_dir, self.raw_data_file_name)
+        self.processed_data_path: str = os.path.join(
+            self.data_dir, self.data_name + ".pt"
+        )
 
-    def _load_or_process_data(self, dataname: str) -> None:
+        self._load_or_process_data()
+
+    def _load_or_process_data(self) -> None:
         """Loads preprocessed data or processes it if not available."""
-        data_path: str = os.path.join(self.data_dir, self.data_name)
-        if os.path.exists(data_path):
+        if os.path.exists(self.processed_data_path):
             print("Data existing. Loading data...")
-            prep_data: Dict[str, torch.Tensor] = self._load_processed_data(data_path)
+            prep_data: Dict[str, torch.Tensor] = self._load_processed_data()
         else:
             print("Data not found. Processing data...")
-            self.process_data(self.data_dir, dataname)
-            prep_data: Dict[str, torch.Tensor] = self._load_processed_data(data_path)
+            self.process_data()
+            prep_data: Dict[str, torch.Tensor] = self._load_processed_data()
 
         self.queries_nearest: torch.Tensor = prep_data[
             "queries_nearest"
@@ -43,9 +47,11 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         self._compute_bounding_box()
         print("NP Load data: End")
 
-    def _load_processed_data(self, data_path: str) -> Dict[str, torch.Tensor]:
+    def _load_processed_data(self) -> Dict[str, torch.Tensor]:
         """Loads preprocessed data from a .pt file."""
-        return torch.load(data_path, map_location=self.device, weights_only=True)
+        return torch.load(
+            self.processed_data_path, map_location=self.device, weights_only=True
+        )
 
     def _compute_bounding_box(self) -> None:
         """Computes and stores the bounding box of the downsampled point cloud."""
@@ -65,9 +71,9 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         """Returns a single data point (point, sample, point_gt)."""
         return self.queries_nearest[idx], self.query_points[idx], self.points_gt
 
-    def process_data(self, data_dir: str, dataname: str) -> None:
+    def process_data(self) -> None:
         """Processes the raw point cloud data and saves it to a .pt file."""
-        pointcloud: np.ndarray = self._load_raw_pointcloud(data_dir, dataname)
+        pointcloud: np.ndarray = self._load_raw_pointcloud()
         pointcloud: np.ndarray = self._normalize_pointcloud(pointcloud)
         pointcloud: np.ndarray = self.FPS_sampling(pointcloud)  # Downsample using FPS
         pointcloud: torch.Tensor = torch.from_numpy(pointcloud).to(self.device).float()
@@ -82,23 +88,15 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
             query_points, pointcloud
         )
 
-        self._save_processed_data(
-            data_dir, dataname, pointcloud, query_points, queries_nearest
-        )
+        self._save_processed_data(pointcloud, query_points, queries_nearest)
 
-    def _load_raw_pointcloud(self, data_dir: str, dataname: str) -> np.ndarray:
+    def _load_raw_pointcloud(self) -> np.ndarray:
         """Loads the raw point cloud data from either a .ply or .xyz file."""
-        if not dataname.endswith((".ply", ".xyz")):
-            ply_path: str = os.path.join(data_dir, dataname + ".ply")
-            xyz_path: str = os.path.join(data_dir, dataname + ".xyz")
-        else:
-            ply_path: str = os.path.join(data_dir, dataname)
-            xyz_path: str = os.path.join(data_dir, dataname)
 
-        if os.path.exists(ply_path):
-            pointcloud: np.ndarray = trimesh.load(ply_path).vertices
-        elif os.path.exists(xyz_path):
-            pointcloud: np.ndarray = np.loadtxt(xyz_path)
+        if self.raw_data_path.endswith(".ply"):
+            pointcloud: np.ndarray = trimesh.load(self.raw_data_path).vertices
+        elif self.raw_data_path.endswith(".xyz"):
+            pointcloud: np.ndarray = np.loadtxt(self.raw_data_path)
         else:
             raise FileNotFoundError(
                 "Only support .xyz or .ply data. Please adjust your data."
@@ -185,8 +183,6 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
 
     def _save_processed_data(
         self,
-        data_dir: str,
-        dataname: str,
         pointcloud: torch.Tensor,
         query_points: torch.Tensor,
         queries_nearest: torch.Tensor,
@@ -199,7 +195,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
                 "query_points": query_points,
                 "queries_nearest": queries_nearest,
             },
-            os.path.join(data_dir, dataname) + ".pt",
+            self.processed_data_path,
         )
 
     def FPS_sampling(self, point_cloud: np.ndarray) -> np.ndarray:
@@ -208,8 +204,8 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
 
         Args:
             point_cloud (np.ndarray): The input point cloud.
-            data_dir (str): Directory to save intermediate files (if needed).
-            dataname (str): Name of the data file.
+            self.data_dir (str): Directory to save intermediate files (if needed).
+            data_name (str): Name of the data file.
 
         Returns:
             np.ndarray: The downsampled point cloud.
