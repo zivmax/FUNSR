@@ -174,7 +174,7 @@ class NormalizeSpaceDataset(torch.utils.data.Dataset):
         query_points_nn: torch.Tensor = torch.reshape(query_points, (-1, point_num, 3))
         queries_nearest: List[torch.Tensor] = []
         for j in range(query_points_nn.shape[0]):
-            nearest_idx: np.ndarray = self.search_nearest_point(
+            nearest_idx: np.ndarray = self._search_nearest_point(
                 query_points_nn[j], pointcloud
             )
             nearest_points: torch.Tensor = pointcloud[nearest_idx]
