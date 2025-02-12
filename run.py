@@ -241,17 +241,17 @@ class Trainer:
                 query = cube[head : min(head + max_batch, cube_points), 0:3]
 
                 # inference defined in forward function per pytorch lightning convention
-                pred_sdf = query_func(query)
+                pred_sd = query_func(query)
 
-                cube[head : min(head + max_batch, cube_points), 3] = pred_sdf.squeeze()
+                cube[head : min(head + max_batch, cube_points), 3] = pred_sd.squeeze()
 
                 head += max_batch
 
         # for occupancy instead of SDF, subtract 0.5 so the surface boundary becomes 0
-        sdf_values = cube[:, 3]
-        sdf_values = sdf_values.reshape(N, N, N).detach().cpu()
+        sds = cube[:, 3]
+        sds = sds.reshape(N, N, N).detach().cpu()
 
-        return sdf_values
+        return sds
 
     def save_checkpoint(self):
         checkpoint = {
