@@ -146,8 +146,8 @@ class Trainer:
 
                 # Total Loss
                 d_fake_output = self.discriminator.sdf(sds_pred)
-                GAN_loss = torch.mean((d_fake_output - 1) ** 2)
-                total_loss = GAN_loss * self.labmda_adl + G_loss
+                D_loss = torch.mean((d_fake_output - 1) ** 2)
+                total_loss = D_loss * self.labmda_adl + G_loss
                 total_loss.backward()
                 self.sdf_optimizer.step()
 
